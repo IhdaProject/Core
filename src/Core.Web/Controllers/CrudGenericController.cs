@@ -1,0 +1,33 @@
+using Core.Domain.Common;
+using Core.Domain.DTOs;
+using Core.Domain.Models.Api;
+using Core.Web.Attributes;
+using Core.Web.Services;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Core.Web.Controllers;
+
+public class CrudGenericController<TIn, TOut, TId>(GenericCrudService<TIn, TOut, TId> crudService) : ApiControllerBase
+    where TIn : ModelBase<TId>
+    where TOut : BaseDto<TId>
+{
+    [HttpGet]
+    [ApiGroup("Client", "Admin")]
+    public Task<ResponseModel<List<TOut>>> GetAll([FromQuery] MetaQueryModel metaQuery)
+        => crudService.GetAllAsync(metaQuery);
+
+    [HttpGet("{id}")]
+    [ApiGroup("Client", "Admin")]
+    public Task<ResponseModel<TOut>> GetById([FromRoute] TId id)
+        => crudService.GetByIdAsync(id);
+
+    [HttpPost]
+    [ApiGroup("Admin")]
+    public Task<ResponseModel<TOut>> OnSave([FromBody] TOut item)
+        => crudService.OnSaveAsync(item);
+
+    [HttpDelete]
+    [ApiGroup("Admin")]
+    public Task<ResponseModel<TOut>> Delete([FromBody] TId id)
+        => crudService.DeleteByIdAsync(id);
+}

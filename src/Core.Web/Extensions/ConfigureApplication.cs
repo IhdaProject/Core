@@ -1,8 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using Core.Domain.Configurations;
-using Core.Domain.Enums;
-using Core.Domain.Models.Auth;
 using Core.Infrastructure.Caching;
 using Core.Infrastructure.Data.Context;
 using Core.Infrastructure.Data.Repositories;
@@ -15,12 +13,8 @@ using Core.Web.Filters;
 using Core.Web.Middlewares;
 using Core.Web.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -272,7 +266,6 @@ public static class ConfigureApplication
         app.UseMiddleware<RequestResponseLoggingMiddleware>();
         app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
-        await app.SynchronizePermissions<TContext>();
         app.AppStartLog();
     }
 
@@ -297,112 +290,6 @@ public static class ConfigureApplication
     public static void AppStartLog(this WebApplication app)
     {
         Log.Fatal("#{ApplicationName} \nApplication starting...", app.Environment.ApplicationName);
-    }
-
-    public static async Task SynchronizePermissions(this WebApplication app)
-    {
-        await app.SynchronizePermissions<CoreDbContext>();
-    }
-
-    public static async Task SynchronizePermissions<TContext>(this WebApplication app)
-        where TContext : CoreDbContext
-    {
-        try
-        {
-            Log.Information("Permissions synchronization starting....");
-            using var scope = app.Services.CreateScope();
-            await using var dataContext = scope.ServiceProvider.GetService<TContext>();
-
-            if (dataContext == null)
-            {
-                Log.Warning("DataContext not found for permission synchronization, skipping.");
-                return;
-            }
-
-            var permissionCodes = typeof(UserPermissions).GetEnumValues().Cast<object>();
-            var enumerable = permissionCodes as object[] ?? permissionCodes.ToArray();
-
-            foreach (var permissionCode in enumerable)
-            {
-                var codeVal = (int)permissionCode;
-                var storedCode = await dataContext.Permissions.FirstOrDefaultAsync(x => x.Code == codeVal);
-                if (storedCode is not null) continue;
-
-                await dataContext.Permissions.AddAsync(new Permission
-                {
-                    Code = codeVal,
-                    Name = permissionCode.ToString() ?? string.Empty
-                });
-            }
-
-            await dataContext.SaveChangesAsync();
-
-            var codes = enumerable.Cast<int>().ToList();
-
-            var removedCodes = await dataContext
-                .Permissions
-                .Where(x => !codes.Contains(x.Code))
-                .ToListAsync();
-
-            if (removedCodes.Count > 0)
-            {
-                dataContext.Permissions.RemoveRange(removedCodes);
-                await dataContext.SaveChangesAsync();
-            }
-
-            #region default Structure data
-            if (!await dataContext.Structures.AnyAsync(s => s.Type == 1))
-            {
-                int[] defaultPermission = [(int)UserPermissions.LogOut, (int)UserPermissions.ViewProfile, (int)UserPermissions.ViewMyPermissions];
-
-                await dataContext.Structures.AddAsync(new Structure
-                {
-                    Id = 1,
-                    Type = 1,
-                    Name = "Default",
-                    StructurePermissions = dataContext.Permissions
-                        .Where(p => defaultPermission.Contains(p.Code))
-                        .Select(p => new StructurePermission
-                        {
-                            PermissionId = p.Id
-                        })
-                        .ToList()
-                });
-
-                await dataContext.SaveChangesAsync();
-            }
-            #endregion
-
-            #region Super Admin Structure data
-            if (!await dataContext.Structures.AnyAsync(s => s.Type == 2))
-            {
-                await dataContext.Structures.AddAsync(new Structure
-                {
-                    Id = 2,
-                    Type = 2,
-                    Name = "Super Admin",
-                    StructurePermissions = dataContext.Permissions
-                        .Select(p => new StructurePermission
-                        {
-                            PermissionId = p.Id
-                        })
-                        .ToList()
-                });
-
-                await dataContext.SaveChangesAsync();
-            }
-            #endregion
-
-            StaticCache.Permissions = await dataContext.Structures
-                .Select(s => new { s.Id, permissionCodes = s.StructurePermissions.Select(sp => sp.Permission.Code) })
-                .ToDictionaryAsync(s => s.Id, s => s.permissionCodes.ToList());
-
-            Log.Information("Permissions synchronization finished successfully.");
-        }
-        catch (Exception e)
-        {
-            Log.Error(e, "Permissions synchronization crashed.");
-        }
     }
 
     public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string cronExpression)

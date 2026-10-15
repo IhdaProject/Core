@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using Core.Domain.Common;
 using Core.Domain.Enums;
-using Core.Domain.Models.Auth;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,10 +17,6 @@ public class CoreDbContext : DbContext
         _serviceProvider = serviceProvider;
         AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
     }
-
-    public DbSet<Permission> Permissions { get; set; } = null!;
-    public DbSet<Structure> Structures { get; set; } = null!;
-    public DbSet<StructurePermission> StructurePermissions { get; set; } = null!;
 
     private long GetCurrentUserId()
     {

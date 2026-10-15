@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Core.Domain.Common.Context;
+using Core.Domain.Common.Lock;
 using Core.Domain.Configurations;
 using Core.Domain.Helpers;
 using Core.Infrastructure.Caching;
@@ -163,6 +165,18 @@ public static class ConfigureApplication
         if (!string.IsNullOrEmpty(connectionString))
         {
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+            
+            // PostgreSQL Performance Tuning: Statement Auto-Prepare va Connection Pooling
+            if (dataSourceBuilder.ConnectionStringBuilder.MinPoolSize == 0)
+                dataSourceBuilder.ConnectionStringBuilder.MinPoolSize = 10;
+            if (dataSourceBuilder.ConnectionStringBuilder.KeepAlive == 0)
+                dataSourceBuilder.ConnectionStringBuilder.KeepAlive = 30;
+            if (dataSourceBuilder.ConnectionStringBuilder.MaxAutoPrepare == 0)
+            {
+                dataSourceBuilder.ConnectionStringBuilder.MaxAutoPrepare = 50;
+                dataSourceBuilder.ConnectionStringBuilder.AutoPrepareMinUsages = 2;
+            }
+
             dataSourceBuilder.EnableDynamicJson();
             var dataSource = dataSourceBuilder.Build();
 
@@ -178,6 +192,9 @@ public static class ConfigureApplication
                 builder.Services.AddScoped<CoreDbContext>(sp => sp.GetRequiredService<TContext>());
             }
         }
+
+        // Multi-Tenancy standart konteksti
+        builder.Services.TryAddScoped<ITenantContext>(_ => NullTenantContext.Instance);
 
         builder.Services.AddScoped(typeof(GenericRepository<,>));
         builder.Services.AddScoped(typeof(GenericCrudService<,,>));
@@ -292,19 +309,26 @@ public static class ConfigureApplication
                 options.Configuration = redisConnectionString;
             });
             builder.Services.AddScoped<ICacheService, RedisCacheService>();
+            builder.Services.AddCoreDistributedLock(redisConnectionString);
+            builder.Services.AddCoreHybridCache(redisConnectionString);
         }
         else if (environment is not null && !environment.Equals("Development", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddScoped<ICacheService, RedisCacheService>();
+            builder.Services.AddCoreHybridCache(null);
         }
         else
         {
             builder.Services.AddScoped<ICacheService, MemoryCacheService>();
+            builder.Services.AddCoreHybridCache(null);
         }
 
         builder.Services.AddScoped<CorrelationIdMiddleware>();
         builder.Services.AddScoped<RequestResponseLoggingMiddleware>();
         builder.Services.AddScoped<GlobalExceptionHandlerMiddleware>();
+        builder.Services.AddTransient<SecurityHeadersMiddleware>();
+        builder.Services.AddTransient<IdempotencyMiddleware>();
+        builder.Services.AddTransient<SessionValidationMiddleware>();
     }
 
     public static async Task ConfigureDefault(this WebApplication app)
@@ -322,6 +346,9 @@ public static class ConfigureApplication
             HttpClientHelpers.HttpClientFactory = httpClientFactory;
         }
 
+        // 0. Security Headers (Clickjacking, MIME-sniffing va XSS himoyasi)
+        app.UseMiddleware<SecurityHeadersMiddleware>();
+
         // 1. Exception handling must be first to catch any exceptions downstream
         app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
@@ -331,7 +358,13 @@ public static class ConfigureApplication
         // 3. Request / Response logging
         app.UseMiddleware<RequestResponseLoggingMiddleware>();
 
-        // 4. Swagger UI
+        // 4. Idempotency middleware (Fintech-darajasidagi dublikat so'rovlarni to'xtatish)
+        if (app.Services.GetService<IDistributedLock>() != null)
+        {
+            app.UseMiddleware<IdempotencyMiddleware>();
+        }
+
+        // 5. Swagger UI
         app.UseSwagger();
         app.UseSwaggerUI(options =>
         {
@@ -341,14 +374,15 @@ public static class ConfigureApplication
                 options.SwaggerEndpoint($"/swagger/{docName}/swagger.json", $"{docName} API");
         });
 
-        // 5. Health checks
+        // 6. Health checks
         app.UseHealthChecks("/healths");
 
-        // 6. CORS policy
+        // 7. CORS policy
         app.UseCors();
 
-        // 7. Authentication & Authorization pipeline
+        // 8. Authentication & Authorization pipeline + Session Revocation check
         app.UseAuthentication();
+        app.UseMiddleware<SessionValidationMiddleware>();
         app.UseAuthorization();
 
         app.AppStartLog();

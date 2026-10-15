@@ -153,4 +153,63 @@ public class FixesAndFeaturesTests
         var pipeline = ResiliencePipelineExtensions.CreateDefaultHttpResiliencePipeline();
         Assert.NotNull(pipeline);
     }
+
+    [Fact]
+    public void NullTenantContext_BehavesCorrectly()
+    {
+        var context = Core.Domain.Common.Context.NullTenantContext.Instance;
+        Assert.Null(context.TenantId);
+        Assert.Null(context.TenantCode);
+        Assert.Equal(Core.Domain.Common.Context.TenantScope.Global, context.Scope);
+        Assert.True(context.IsCrossTenant);
+        Assert.True(context.IsTenantFilterDisabled);
+
+        // Change and DisableTenantFilter should return safe no-op disposables
+        using var disposable1 = context.Change(123);
+        Assert.NotNull(disposable1);
+
+        using var disposable2 = context.DisableTenantFilter();
+        Assert.NotNull(disposable2);
+    }
+
+    [Fact]
+    public void AppHeaderNames_ContainRequiredKeys()
+    {
+        Assert.Equal("X-Correlation-Id", Core.Domain.Constants.AppHeaderNames.CorrelationId);
+        Assert.Equal("X-Idempotency-Key", Core.Domain.Constants.AppHeaderNames.IdempotencyKey);
+        Assert.Equal("X-Tenant-Id", Core.Domain.Constants.AppHeaderNames.TenantId);
+        Assert.Equal("X-User-Id", Core.Domain.Constants.AppHeaderNames.UserId);
+        Assert.Equal("X-Cache", Core.Domain.Constants.AppHeaderNames.XCache);
+    }
+
+    private class SampleTestItem
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+    }
+
+    [Fact]
+    public void QueryableExtensions_FilterByExpressions_WorksInMemory()
+    {
+        var items = new List<SampleTestItem>
+        {
+            new() { Id = 1, Name = "Alice", Age = 25 },
+            new() { Id = 2, Name = "Bob", Age = 30 },
+            new() { Id = 3, Name = "Charlie", Age = 35 }
+        }.AsQueryable();
+
+        var query = new MetaQueryModel
+        {
+            FilteringExpressions =
+            [
+                new MetaQueryFilterModel { PropertyName = "Age", Type = ">=", Value = "30" }
+            ]
+        };
+
+        var filtered = Core.Infrastructure.Data.Extensions.QueryableExtensions.FilterByExpressions(items, query).ToList();
+        Assert.Equal(2, filtered.Count);
+        Assert.Contains(filtered, x => x.Name == "Bob");
+        Assert.Contains(filtered, x => x.Name == "Charlie");
+    }
 }

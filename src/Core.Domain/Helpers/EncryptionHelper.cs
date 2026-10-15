@@ -30,7 +30,7 @@ public static class EncryptionHelper
         var data = $"{url}:{userId}";
         using var aesAlg = Aes.Create();
         aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
-        aesAlg.IV = GenerateDeterministicIv(url, userId, key, aesAlg.BlockSize / 8);
+        aesAlg.IV = GenerateRandomBytes(aesAlg.BlockSize / 8);
 
         var encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
         using var msEncrypt = new MemoryStream();
@@ -66,83 +66,116 @@ public static class EncryptionHelper
 
     public static (string Type, long Id, long UserId, DateTime Timestamp) Decrypt(string encrypted, string key)
     {
-        var fullCipher = Convert.FromBase64String(encrypted);
-        using var aesAlg = Aes.Create();
-        aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
-        var iv = new byte[aesAlg.BlockSize / 8];
-        var cipher = new byte[fullCipher.Length - iv.Length];
+        try
+        {
+            var fullCipher = Convert.FromBase64String(encrypted);
+            using var aesAlg = Aes.Create();
+            aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
+            var iv = new byte[aesAlg.BlockSize / 8];
+            if (fullCipher.Length <= iv.Length) return default;
 
-        Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
-        Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
+            var cipher = new byte[fullCipher.Length - iv.Length];
 
-        using var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, iv);
-        using var msDecrypt = new MemoryStream(cipher);
-        using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
-        using var srDecrypt = new StreamReader(csDecrypt);
-        var decrypted = srDecrypt.ReadToEnd();
+            Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
+            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
 
-        var parts = decrypted.Split(':');
-        if (parts.Length != 4) return default;
+            using var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, iv);
+            using var msDecrypt = new MemoryStream(cipher);
+            using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
+            using var srDecrypt = new StreamReader(csDecrypt);
+            var decrypted = srDecrypt.ReadToEnd();
 
-        var type = parts[0];
-        var id = long.Parse(parts[1]);
-        var userId = long.Parse(parts[2]);
-        var timestamp = new DateTime(long.Parse(parts[3]));
+            var parts = decrypted.Split(':');
+            if (parts.Length < 4) return default;
 
-        return (type, id, userId, timestamp);
+            var lastPart = parts[^1];
+            var secondLast = parts[^2];
+            var thirdLast = parts[^3];
+            var type = string.Join(':', parts[..^3]);
+
+            if (!long.TryParse(thirdLast, out var id) ||
+                !long.TryParse(secondLast, out var userId) ||
+                !long.TryParse(lastPart, out var ticks))
+                return default;
+
+            return (type, id, userId, new DateTime(ticks));
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     public static (string url, long UserId) DecryptString(string encrypted, string key)
     {
-        var fullCipher = Convert.FromBase64String(encrypted);
-        using var aesAlg = Aes.Create();
-        aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
-        var iv = new byte[aesAlg.BlockSize / 8];
-        var cipher = new byte[fullCipher.Length - iv.Length];
+        try
+        {
+            var fullCipher = Convert.FromBase64String(encrypted);
+            using var aesAlg = Aes.Create();
+            aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
+            var iv = new byte[aesAlg.BlockSize / 8];
+            if (fullCipher.Length <= iv.Length) return default;
 
-        Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
-        Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
+            var cipher = new byte[fullCipher.Length - iv.Length];
 
-        using var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, iv);
-        using var msDecrypt = new MemoryStream(cipher);
-        using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
-        using var srDecrypt = new StreamReader(csDecrypt);
-        var decrypted = srDecrypt.ReadToEnd();
+            Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
+            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
 
-        var parts = decrypted.Split(':');
-        if (parts.Length != 2) return default;
+            using var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, iv);
+            using var msDecrypt = new MemoryStream(cipher);
+            using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
+            using var srDecrypt = new StreamReader(csDecrypt);
+            var decrypted = srDecrypt.ReadToEnd();
 
-        var url = parts[0];
-        var userId = long.Parse(parts[1]);
+            var lastColonIndex = decrypted.LastIndexOf(':');
+            if (lastColonIndex <= 0 || lastColonIndex == decrypted.Length - 1) return default;
 
-        return (url, userId);
+            var url = decrypted[..lastColonIndex];
+            if (!long.TryParse(decrypted[(lastColonIndex + 1)..], out var userId)) return default;
+
+            return (url, userId);
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     public static (long Id, string Token, DateTime Timestamp) DecryptStringWithTime(string encrypted, string key)
     {
-        var fullCipher = Convert.FromBase64String(encrypted);
-        using var aesAlg = Aes.Create();
-        aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
-        var iv = new byte[aesAlg.BlockSize / 8];
-        var cipher = new byte[fullCipher.Length - iv.Length];
+        try
+        {
+            var fullCipher = Convert.FromBase64String(encrypted);
+            using var aesAlg = Aes.Create();
+            aesAlg.Key = Encoding.UTF8.GetBytes(key.PadRight(32)[..32]);
+            var iv = new byte[aesAlg.BlockSize / 8];
+            if (fullCipher.Length <= iv.Length) return default;
 
-        Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
-        Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
+            var cipher = new byte[fullCipher.Length - iv.Length];
 
-        using var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, iv);
-        using var msDecrypt = new MemoryStream(cipher);
-        using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
-        using var srDecrypt = new StreamReader(csDecrypt);
-        var decrypted = srDecrypt.ReadToEnd();
+            Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
+            Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
 
-        var parts = decrypted.Split(':');
-        if (parts.Length != 3) return default;
+            using var decryptor = aesAlg.CreateDecryptor(aesAlg.Key, iv);
+            using var msDecrypt = new MemoryStream(cipher);
+            using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
+            using var srDecrypt = new StreamReader(csDecrypt);
+            var decrypted = srDecrypt.ReadToEnd();
 
-        var id = long.Parse(parts[0]);
-        var token = parts[1];
-        var timestamp = new DateTime(long.Parse(parts[2]));
+            var firstColon = decrypted.IndexOf(':');
+            var lastColon = decrypted.LastIndexOf(':');
+            if (firstColon <= 0 || lastColon <= firstColon || lastColon == decrypted.Length - 1) return default;
 
-        return (id, token, timestamp);
+            if (!long.TryParse(decrypted[..firstColon], out var id)) return default;
+            var token = decrypted.Substring(firstColon + 1, lastColon - firstColon - 1);
+            if (!long.TryParse(decrypted[(lastColon + 1)..], out var ticks)) return default;
+
+            return (id, token, new DateTime(ticks));
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     private static byte[] GenerateRandomBytes(int length)
@@ -150,12 +183,5 @@ public static class EncryptionHelper
         var bytes = new byte[length];
         RandomNumberGenerator.Fill(bytes);
         return bytes;
-    }
-
-    private static byte[] GenerateDeterministicIv(string url, long userId, string key, int ivSize)
-    {
-        var input = $"{url}:{userId}:{key}";
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
-        return hash[..ivSize];
     }
 }

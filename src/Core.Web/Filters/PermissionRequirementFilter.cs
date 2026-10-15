@@ -26,7 +26,7 @@ public class PermissionRequirementFilter(int[] requiredPermissionsCodes) : IAsyn
         }).ToList();
 
         if (requiredPermissionsCodes.Any(x => permissions.All(pc => pc != x)))
-            throw new AlreadyExistsException("Forbidden");
+            throw new ForbiddenException("Forbidden");
 
         return Task.CompletedTask;
     }

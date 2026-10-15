@@ -35,11 +35,12 @@ public class BasicCrudService<TIn, TOut, TId>(GenericRepository<TIn, TId> reposi
         var query = repository.GetAllAsQueryable()
             .FilterByExpressions(metaQuery);
 
-        var items = await query
+        var entities = await query
             .Sort(metaQuery)
             .Paging(metaQuery)
-            .Select(c => mapper.Map<TOut>(c))
             .ToListAsync();
+
+        var items = mapper.Map<List<TOut>>(entities);
 
         var totalCount = await query.CountAsync();
 

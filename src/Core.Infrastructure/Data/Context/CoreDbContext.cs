@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Security.Claims;
 using Core.Domain.Common;
 using Core.Domain.Enums;
@@ -18,7 +19,7 @@ public class CoreDbContext : DbContext
         AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
     }
 
-    private long GetCurrentUserId()
+    protected virtual long GetCurrentUserId()
     {
         var httpContextAccessor = _serviceProvider?.GetService<IHttpContextAccessor>();
         var userIdClaim = httpContextAccessor?.HttpContext?.User?.FindFirst(CustomClaimNames.UserId)
@@ -30,55 +31,92 @@ public class CoreDbContext : DbContext
         return -1;
     }
 
-    private void TrackActionsAt()
+    private void ProcessSoftDeleteAndAudit()
     {
         var dateTimeNow = DateTime.UtcNow;
         var userId = GetCurrentUserId();
 
-        foreach (var entity in ChangeTracker.Entries()
-                     .Where(x => x.State == EntityState.Added && x.Entity is AuditableModelBase<long>))
+        // Soft delete processing: convert deleted entities into soft-deleted
+        foreach (var entry in ChangeTracker.Entries<ISoftDelete>())
         {
-            var model = (AuditableModelBase<long>)entity.Entity;
-            model.CreatedAt = dateTimeNow;
-            model.CreatedBy = userId;
+            if (entry.State == EntityState.Deleted)
+            {
+                entry.State = EntityState.Modified;
+                entry.Entity.IsDelete = true;
+            }
         }
 
-        foreach (var entity in ChangeTracker.Entries()
-                     .Where(x => x.State == EntityState.Modified && x.Entity is AuditableModelBase<long>))
+        // Auditing processing
+        foreach (var entry in ChangeTracker.Entries<IAuditable>())
         {
-            var model = (AuditableModelBase<long>)entity.Entity;
-            model.UpdatedAt = dateTimeNow;
-            model.UpdatedBy = userId;
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = dateTimeNow;
+                if (entry.Entity is IAuditable<long> auditableLong)
+                {
+                    auditableLong.CreatedBy = userId;
+                }
+                else if (entry.Entity is IAuditable<string> auditableString)
+                {
+                    auditableString.CreatedBy = userId.ToString();
+                }
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = dateTimeNow;
+                if (entry.Entity is IAuditable<long> auditableLong)
+                {
+                    auditableLong.UpdatedBy = userId;
+                }
+                else if (entry.Entity is IAuditable<string> auditableString)
+                {
+                    auditableString.UpdatedBy = userId.ToString();
+                }
+            }
         }
     }
 
     public override int SaveChanges()
     {
-        TrackActionsAt();
+        ProcessSoftDeleteAndAudit();
         return base.SaveChanges();
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        TrackActionsAt();
+        ProcessSoftDeleteAndAudit();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        TrackActionsAt();
+        ProcessSoftDeleteAndAudit();
         return base.SaveChangesAsync(cancellationToken);
     }
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        TrackActionsAt();
+        ProcessSoftDeleteAndAudit();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Global Query Filter for soft-deleted entities
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(ISoftDelete).IsAssignableFrom(entityType.ClrType))
+            {
+                var parameter = Expression.Parameter(entityType.ClrType, "e");
+                var property = Expression.Property(parameter, nameof(ISoftDelete.IsDelete));
+                var notDeleted = Expression.Not(property);
+                var lambda = Expression.Lambda(notDeleted, parameter);
+
+                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+            }
+        }
 
         // Configuring all MultiLanguageField properties over entities to jsonb
         var multiLanguageFields = modelBuilder

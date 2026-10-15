@@ -2,17 +2,21 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Core.Domain.Common;
 
-public abstract class AuditableModelBase<TId> : ModelBase<TId>
+public abstract class AuditableModelBase<TId, TUserId> : ModelBase<TId>, IAuditable<TUserId>
 {
     [Column("created_at")] 
     public DateTime? CreatedAt { get; set; }
 
     [Column("created_by")] 
-    public long CreatedBy { get; set; }
+    public TUserId CreatedBy { get; set; } = default!;
 
     [Column("updated_at")] 
     public DateTime? UpdatedAt { get; set; }
 
     [Column("updated_by")] 
-    public long UpdatedBy { get; set; }
+    public TUserId UpdatedBy { get; set; } = default!;
+}
+
+public abstract class AuditableModelBase<TId> : AuditableModelBase<TId, long>
+{
 }

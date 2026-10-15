@@ -32,10 +32,23 @@ public class RedisCacheService(IDistributedCache distributedCache) : ICacheServi
 
     public bool TryGetData<T>(string key, out T? data)
     {
-        var task = TryGetDataAsync<T>(key);
-        var result = task.GetAwaiter().GetResult();
-        data = result.Data;
-        return result.Success;
+        var json = distributedCache.GetString(key);
+        if (string.IsNullOrEmpty(json))
+        {
+            data = default;
+            return false;
+        }
+
+        try
+        {
+            data = JsonSerializer.Deserialize<T>(json);
+            return data != null;
+        }
+        catch
+        {
+            data = default;
+            return false;
+        }
     }
 
     public async Task<string?> GetJsonAsync(string key)
@@ -51,10 +64,8 @@ public class RedisCacheService(IDistributedCache distributedCache) : ICacheServi
 
     public bool TryGetJson(string key, out string? data)
     {
-        var task = TryGetJsonAsync(key);
-        var result = task.GetAwaiter().GetResult();
-        data = result.Data;
-        return result.Success;
+        data = distributedCache.GetString(key);
+        return !string.IsNullOrEmpty(data);
     }
 
     public async Task<bool> SetDataAsync<T>(string key, T data, TimeSpan expiry)

@@ -5,9 +5,9 @@ namespace Core.Domain.Exceptions;
 
 public sealed class AlreadyExistsException : ApiExceptionBase
 {
-    public AlreadyExistsException(string message, ErrorTypes errorCode = ErrorTypes.ServerInternalError) : base(message)
+    public AlreadyExistsException(string message, ErrorTypes errorCode = ErrorTypes.Conflict) : base(message)
     {
-        StatusCode = 403;
+        StatusCode = 409;
         ErrorCode = errorCode;
     }
 }

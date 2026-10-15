@@ -18,13 +18,20 @@ public class MetaQueryModel
         set
         {
             _filteringExpressionsJson = value;
-            if (string.IsNullOrEmpty(value))
+            if (string.IsNullOrWhiteSpace(value))
             {
                 FilteringExpressions = null;
-                FilteringExpressionsJson = null;
                 return;
             }
-            FilteringExpressions = JsonSerializer.Deserialize<List<MetaQueryFilterModel>>(value);
+
+            try
+            {
+                FilteringExpressions = JsonSerializer.Deserialize<List<MetaQueryFilterModel>>(value);
+            }
+            catch
+            {
+                FilteringExpressions = null;
+            }
         }
     }
 
@@ -40,13 +47,20 @@ public class MetaQueryModel
         set
         {
             _sortingExpressionsJson = value;
-            if (string.IsNullOrEmpty(value))
+            if (string.IsNullOrWhiteSpace(value))
             {
                 SortingExpressions = null;
-                SortingExpressionsJson = null;
                 return;
             }
-            SortingExpressions = JsonSerializer.Deserialize<List<MetaQuerySortModel>>(value);
+
+            try
+            {
+                SortingExpressions = JsonSerializer.Deserialize<List<MetaQuerySortModel>>(value);
+            }
+            catch
+            {
+                SortingExpressions = null;
+            }
         }
     }
 }

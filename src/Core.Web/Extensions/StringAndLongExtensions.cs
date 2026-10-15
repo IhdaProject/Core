@@ -32,13 +32,17 @@ public static class StringAndLongExtensions
                 decrypt.Type != type || decrypt.Id == 0 ||
                 decrypt.UserId != currentUserId ||
                 decrypt.Timestamp.AddMinutes(AddMinutes) < DateTime.UtcNow)
-                throw new AlreadyExistsException("Forbidden");
+                throw new ForbiddenException("Forbidden");
 
             return decrypt.Id;
         }
+        catch (ForbiddenException)
+        {
+            throw;
+        }
         catch (Exception)
         {
-            throw new AlreadyExistsException("Forbidden");
+            throw new ForbiddenException("Forbidden");
         }
     }
 
@@ -55,13 +59,17 @@ public static class StringAndLongExtensions
                         decrypt.Type != type || decrypt.Id == 0 ||
                         decrypt.UserId != currentUserId ||
                         decrypt.Timestamp.AddMinutes(AddMinutes) < DateTime.UtcNow)
-                        throw new AlreadyExistsException("Forbidden");
+                        throw new ForbiddenException("Forbidden");
 
                     return decrypt.Id;
                 }
+                catch (ForbiddenException)
+                {
+                    throw;
+                }
                 catch (Exception)
                 {
-                    throw new AlreadyExistsException("Forbidden");
+                    throw new ForbiddenException("Forbidden");
                 }
             })
         ];
@@ -73,13 +81,17 @@ public static class StringAndLongExtensions
         {
             var decrypt = EncryptionHelper.DecryptString(encryptedData, StaticCache.SymmetricKey);
             if (decrypt.url == null || decrypt.UserId != currentUserId)
-                throw new AlreadyExistsException("Forbidden");
+                throw new ForbiddenException("Forbidden");
 
             return decrypt.url;
         }
+        catch (ForbiddenException)
+        {
+            throw;
+        }
         catch (Exception)
         {
-            throw new AlreadyExistsException("Forbidden");
+            throw new ForbiddenException("Forbidden");
         }
     }
 
@@ -92,7 +104,7 @@ public static class StringAndLongExtensions
         }
         catch (Exception)
         {
-            throw new AlreadyExistsException("Forbidden");
+            throw new ForbiddenException("Forbidden");
         }
     }
 }

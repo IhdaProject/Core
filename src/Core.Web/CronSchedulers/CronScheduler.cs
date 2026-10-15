@@ -1,6 +1,7 @@
 using Core.Domain.Configurations;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog;
 
 namespace Core.Web.CronSchedulers;
 
@@ -39,8 +40,19 @@ public sealed class CronScheduler : BackgroundService
 
         foreach (var run in currentRuns)
         {
-            var job = (ICronJob)_serviceProvider.GetRequiredService(run);
-            job.Run(stoppingToken);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var job = (ICronJob)scope.ServiceProvider.GetRequiredService(run);
+                    await job.Run(stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Cron job execution failed for {JobName}", run.FullName);
+                }
+            }, stoppingToken);
         }
     }
 

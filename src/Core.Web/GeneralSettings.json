@@ -6,17 +6,36 @@
     ]
   },
   "Serilog": {
-    "Using": [ "Serilog.Sinks.Console", "Serilog.Sinks.File" ],
+    "Using": [
+      "Serilog.Sinks.Console",
+      "Serilog.Sinks.File",
+      "Serilog.Sinks.Seq",
+      "Serilog.Sinks.Telegram.Alternative"
+    ],
     "MinimumLevel": {
       "Default": "Information",
       "Override": {
-        "Microsoft": "Information"
+        "Microsoft": "Warning",
+        "Microsoft.Hosting.Lifetime": "Information",
+        "Microsoft.EntityFrameworkCore": "Warning",
+        "System": "Warning"
       }
     },
-    "Enrich": [ "FromLogContext", "WithMachineName" ],
+    "Enrich": [
+      "FromLogContext",
+      "WithMachineName",
+      "WithProcessId",
+      "WithThreadId"
+    ],
+    "Properties": {
+      "Application": "CoreService"
+    },
     "WriteTo": [
       {
-        "Name": "Console"
+        "Name": "Console",
+        "Args": {
+          "outputTemplate": "[{Timestamp:HH:mm:ss} {Level:u3}] [{CorrelationId}] {Message:lj}{NewLine}{Exception}"
+        }
       },
       {
         "Name": "File",
@@ -24,11 +43,39 @@
           "path": "Logs/mylog-.log",
           "rollingInterval": "Day",
           "rollOnFileSizeLimit": true,
-          "fileSizeLimitBytes": 5242880,
-          "outputTemplate": "{ProjectName} {Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+          "fileSizeLimitBytes": 10485760,
+          "retainedFileCountLimit": 31,
+          "outputTemplate": "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{CorrelationId}] {Message:lj}{NewLine}{Exception}"
+        }
+      },
+      {
+        "Name": "Seq",
+        "Args": {
+          "serverUrl": "http://localhost:5341",
+          "apiKey": ""
+        }
+      },
+      {
+        "Name": "Telegram",
+        "Args": {
+          "botToken": "YOUR_TELEGRAM_BOT_TOKEN",
+          "chatId": "YOUR_TELEGRAM_CHAT_ID",
+          "restrictedToMinimumLevel": "Fatal"
         }
       }
     ]
+  },
+  "SerilogProfiles": {
+    "Development": {
+      "Sinks": [ "Console", "File" ]
+    },
+    "Production": {
+      "Sinks": [ "Console", "Seq", "Telegram" ],
+      "TelegramMinimumLevel": "Fatal",
+      "SeqServerUrl": "http://localhost:5341",
+      "TelegramBotToken": "YOUR_TELEGRAM_BOT_TOKEN",
+      "TelegramChatId": "YOUR_TELEGRAM_CHAT_ID"
+    }
   },
   "AllowedHosts": "*"
 }

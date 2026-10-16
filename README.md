@@ -231,6 +231,54 @@ builder.Services.AddCoreGrpcClient<IBillingGrpcService>("http://billing-service:
 
 ---
 
+### 10. 🔑 Taqsimlangan Ruxsatlar va Avto-Sinxronizatsiya (Decentralized Permissions)
+Har bir servis o'zining ruxsatlariga o'zi egalik qiladi. `Core` dagi umumiy enumga qaramlik yo'q!
+
+#### 1. Mikroservis o'zining lokal ruxsatlar enum'ini yaratadi:
+```csharp
+[PermissionsModule("QuranCourse", serviceCode: 60, moduleName: "Quran Training")]
+public enum QuranPermissions
+{
+    [Description("Yangi o'quv markazi yaratish")]
+    CreateTrainingCenter = 60100001,
+
+    [Description("O'quv markazlarini ko'rish")]
+    ViewTrainingCenters  = 60100002
+}
+```
+
+#### 2. Kontrollerda o'zining lokal enumi orqali tekshiradi:
+```csharp
+[PermissionAuthorize(QuranPermissions.CreateTrainingCenter)]
+[HttpPost]
+public async Task<IActionResult> CreateCenter() { ... }
+```
+*(Eski `[PermissionAuthorize(UserPermissions.LogOut)]` va raqamli `[PermissionAuthorize(60100001)]` kodlari ham 100% qo'llab-quvvatlanadi).*
+
+#### 3. Mikroservis Program.cs da avtomatik sinxronlashni yoqish:
+Servis ishga tushishi bilan barcha ruxsatlar RabbitMQ (yoki gRPC) orqali `AuthApi` ga avtomatik yuboriladi:
+```csharp
+builder.Services.AddCorePermissionAutoSync<QuranPermissions>();
+```
+
+#### 4. AuthApi tomonida qabul qilib bazaga saqlash:
+```csharp
+// 1. IPermissionStorageHandler ni implement qilish (EF Core orqali DB ga Upsert qilish):
+public class AuthPermissionStorageHandler : IPermissionStorageHandler
+{
+    public async Task<int> HandlePermissionsReceivedAsync(string serviceName, int? serviceCode, IReadOnlyList<PermissionDefinition> permissions, CancellationToken ct)
+    {
+        // Bazaga yangi ruxsatlarni qo'shish yoki yangilash
+        return permissions.Count;
+    }
+}
+
+// 2. Program.cs da ro'yxatdan o'tkazish:
+builder.Services.AddCorePermissionReceiver<AuthPermissionStorageHandler>();
+```
+
+---
+
 ## 🧩 Tezkor Boshlash (`Program.cs`)
 
 Barcha standart sozlamalar bitta chaqiruv bilan ishga tushadi:

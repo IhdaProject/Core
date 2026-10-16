@@ -212,4 +212,47 @@ public class FixesAndFeaturesTests
         Assert.Contains(filtered, x => x.Name == "Bob");
         Assert.Contains(filtered, x => x.Name == "Charlie");
     }
+
+    [Core.Domain.Permissions.PermissionsModule("SampleService", 88, "SampleModule")]
+    private enum SampleCustomPermissions
+    {
+        [System.ComponentModel.Description("Create sample item description")]
+        CreateSample = 88100001,
+        [System.ComponentModel.Description("Delete sample item description")]
+        DeleteSample = 88100002
+    }
+
+    [Fact]
+    public void PermissionDiscoveryHelper_ExtractsAllMetadataProperly()
+    {
+        var permissions = Core.Infrastructure.Permissions.PermissionDiscoveryHelper.DiscoverFromEnum<SampleCustomPermissions>();
+
+        Assert.Equal(2, permissions.Count);
+
+        var createPerm = permissions.First(p => p.Name == "CreateSample");
+        Assert.Equal(88100001, createPerm.Code);
+        Assert.Equal("Create sample item description", createPerm.Description);
+        Assert.Equal("SampleModule", createPerm.ModuleName);
+        Assert.Equal("SampleService", createPerm.ServiceName);
+    }
+
+    [Fact]
+    public void PermissionAuthorizeAttribute_AcceptsCustomEnum_AndExtractsCorrectIntCodes()
+    {
+        // 1. With custom enum
+        var customAttr = new Core.Web.Attributes.PermissionAuthorizeAttribute(SampleCustomPermissions.CreateSample, SampleCustomPermissions.DeleteSample);
+        Assert.NotNull(customAttr.Arguments);
+        var customCodes = Assert.IsType<int[]>(customAttr.Arguments[0]);
+        Assert.Equal([88100001, 88100002], customCodes);
+
+        // 2. With legacy UserPermissions enum
+        var legacyAttr = new Core.Web.Attributes.PermissionAuthorizeAttribute(UserPermissions.LogOut);
+        var legacyCodes = Assert.IsType<int[]>(legacyAttr.Arguments![0]);
+        Assert.Equal([10100001], legacyCodes);
+
+        // 3. With raw integers
+        var rawAttr = new Core.Web.Attributes.PermissionAuthorizeAttribute(88100001);
+        var rawCodes = Assert.IsType<int[]>(rawAttr.Arguments![0]);
+        Assert.Equal([88100001], rawCodes);
+    }
 }
